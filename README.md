@@ -88,7 +88,7 @@ python -m app.main
 - `tables.*.file` 指向表配置文件
 - 配置路径由 `ConfigManager` 按 `APP_CONFIG_ENTRY` 所在目录解析
 
-[更多配置说明](docs/config_template_usage.md)
+[更多配置说明](docs/配置模板使用说明.md)
 
 ## 注意事项
 
