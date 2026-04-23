@@ -1,0 +1,35 @@
+################################################
+##             FORM TEMPLATE                 ##
+##--------------------------------------------##
+##    version: form version                  ##
+##    title: form title                      ##
+##    icon: form icon                        ##
+##    combine_datetime: combine datetime      ##
+##    groups: groups config                   ##
+################################################
+
+version: <表单版本号>
+title: <表单标题>
+icon: <表单图标>
+combine_datetime: <是否合并日期时间>
+
+common_fields: !include: common.yaml
+
+groups:
+  <组键1>: &<组键1>
+    title: <组标题1>
+    icon: <组图标1>
+    refresh_after_upload: <是否上传后刷新>
+    fields:
+      - *<公共字段键1>      # 直接使用公共字段键1
+      - <<: *<公共字段键2>  # 使用公共字段键2，并覆盖其键和标签
+        key: <覆盖公共字段键2的键>
+        label: <覆盖公共字段键2的标签>
+      - <<: *<字段模板键1>  # 使用字段模板创建新字段, 并覆盖其字段类型
+        key: <新字段的键1>
+        label: <新字段的标签1>
+        type: <新字段类型>
+      - <<: *<字段模板键2>  # 使用字段模板创建新字段, 并新建键值对
+        key: <新字段的键2>
+        label: <新字段的标签2>
+        <新键>: <新值>

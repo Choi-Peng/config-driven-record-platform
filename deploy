@@ -1,0 +1,86 @@
+#!/bin/bash
+# 肥料实验田系统 - 快速部署脚本
+#
+# 虚拟环境使用 Astral uv（https://docs.astral.sh/uv/）：
+#   - 在项目根目录创建 .venv：uv venv .venv
+#   - 激活后安装依赖：uv pip install -r requirements.txt
+# 本脚本会依次执行上述步骤（需已安装 uv）。
+
+set -e
+
+PROJECT_NAME=$(grep -E '^PROJECT_NAME=' .env | cut -d '=' -f 2)
+
+cd "$(dirname "$0")"
+REPO_ROOT="$(pwd)"
+
+echo "🌱 $PROJECT_NAME - 部署脚本"
+echo "======================================"
+echo ""
+echo "📌 虚拟环境：使用 uv 在项目根目录创建并维护 .venv"
+
+if ! command -v uv &> /dev/null; then
+    echo "❌ 未找到 uv。请先安装：https://docs.astral.sh/uv/getting-started/installation/"
+    echo "   安装后也可手动执行："
+    echo "     uv venv .venv && source .venv/bin/activate && uv pip install -r requirements.txt"
+    exit 1
+fi
+
+echo "🔧 执行: uv venv .venv"
+uv venv .venv
+
+echo "🔧 激活 .venv 并安装依赖: uv pip install -r requirements.txt"
+# shellcheck source=/dev/null
+source .venv/bin/activate
+
+if ! command -v python3 &> /dev/null; then
+    echo "❌ 错误：虚拟环境中未找到 python3"
+    exit 1
+fi
+
+echo "✅ Python 版本：$(python3 --version)"
+
+echo ""
+echo "📦 安装 Python 依赖..."
+uv pip install -r requirements.txt
+
+# 检查端口
+PORT=8000
+if netstat -tuln 2>/dev/null | grep -q ":$PORT "; then
+    echo "⚠️  警告：端口 $PORT 已被占用"
+    read -p "是否继续？(y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+# 获取本机 IP（Linux 常见；macOS 无 hostname -I 时可能为空）
+IP_ADDR=""
+if hostname -I &>/dev/null; then
+    IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+
+echo ""
+echo "======================================"
+echo "✅ 部署完成！"
+echo ""
+echo "📍 访问地址:"
+echo "   本机：http://localhost:$PORT"
+if [[ -n "$IP_ADDR" ]]; then
+    echo "   局域网：http://$IP_ADDR:$PORT"
+fi
+echo ""
+echo "🚀 启动命令（需已 source .venv/bin/activate，且在项目根目录）:"
+echo "   python3 -m app.main"
+echo "   或项目根目录: ./start"
+echo "======================================"
+
+# 可选：直接启动
+read -p "是否现在启动服务？(y/N) " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "🚀 启动$PROJECT_NAME..."
+    cd "${REPO_ROOT}"
+    python3 -m app.main
+fi

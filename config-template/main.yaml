@@ -1,0 +1,56 @@
+################################################
+##            MAIN CONFIG TEMPLATE            ##
+##--------------------------------------------##
+##    title: system title                     ##
+##    version: system version                 ##
+##    data_path: data path                    ##
+##    database: database config               ##
+##    form_pages: form pages config           ##
+##    active_form: active form page key       ##
+##    tables: tables config                   ##
+################################################
+
+title: <系统标题>
+version: <版本号>
+
+data_path:
+  root: <数据根目录>
+  database: <数据库文件路径>
+  files: <文件目录路径>
+  images: <图片目录路径>
+
+database:
+  journal_mode: <WAL|DELETE|TRUNCATE|PERSIST|MEMORY>
+  synchronous: <OFF|NORMAL|FULL>
+  foreign_keys: <true|false>
+  busy_timeout: <毫秒整数>
+  cache_size: <整数>
+
+form_pages:
+  <页面键1>:
+    title: <页面标题1>
+    file: <页面配置文件路径1>
+  <页面键2>:
+    title: <页面标题2>
+    file: <页面配置文件路径2>
+
+active_form: <默认表单页面键>
+
+tables:
+  roles:
+    title: 角色列表
+    file: tables/roles.yaml
+  users:
+    title: 用户列表
+    file: tables/users.yaml
+  permissions:
+    title: 权限列表
+    file: tables/permissions.yaml
+  <表键1>:
+    title: <表标题1>
+    file: <表配置文件路径1>
+  <表键2>:
+    title: <表标题2>
+    file: <表配置文件路径2>
+
+image_name_format: "{timestamp}_{image_index}"

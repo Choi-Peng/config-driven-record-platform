@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+{% block title %}记录详情 — {{ form_page_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xl-7">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-journal-text"></i> {{ form_page_title }} - 记录详情
+                </div>
+                <div class="card-body">
+                    <form id="recordDetailForm">
+                        <div id="dynamicForm"></div>
+                        <div class="d-flex gap-2 mt-3">
+                            {% if can_update %}
+                            <button type="button" id="updateBtn" class="btn btn-primary">更新</button>
+                            {% endif %}
+                            {% if can_delete %}
+                            <button type="button" id="deleteBtn" class="btn btn-outline-danger">删除</button>
+                            {% endif %}
+                            <a href="/records" class="btn btn-outline-secondary ms-auto">返回列表</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const FORM_PAGE = "{{ current_form_page }}";
+const RECORD_ID = Number("{{ record_id }}");
+const CAN_UPDATE = {{ "true" if can_update else "false" }};
+const CAN_DELETE = {{ "true" if can_delete else "false" }};
+let combineDateTimeEnabled = false;
+let currentRecord = {};
+let editMode = false;
+let imageFieldKeys = [];
+const imageFieldState = {};
+
+function esc(v) {
+    return String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
+}
+
+async function fetchOptions(source) {
+    if (!source || typeof source !== 'object') return [];
+    const sourceType = source.type || 'options';
+    if (sourceType === 'options') {
+        const values = source.values || [];
+        return values.map(v => {
+            if (typeof v === 'object') return { value: String(v.value || ''), label: String(v.label || v.value || '') };
+            const s = String(v);
+            return { value: s, label: s };
+        });
+    }
+    if (sourceType === 'database') {
+        const values = source.values || {};
+        if (!values.table || !values.key) return [];
+        const res = await fetch(`/api/options/source?source_type=database&table=${encodeURIComponent(values.table)}&key=${encodeURIComponent(values.key)}`);
+        const data = await res.json().catch(() => ({}));
+        return data.options || [];
+    }
+    return [];
+}
+
+function createInput(field) {
+    const key = field.key;
+    const width = Math.min(12, Math.max(1, Number(field.width || 12)));
+    const wrapper = document.createElement('div');
+    wrapper.className = `col-md-${width} mb-3`;
+    wrapper.dataset.fieldKey = key;
+    const id = `field_${key}`;
+    let html = `<label class="form-label">${esc(field.label)}</label>`;
+
+    if (field.type === 'textarea') {
+        html += `<textarea class="form-control" id="${id}" data-field-key="${key}" rows="${Number(field.rows || 2)}"></textarea>`;
+    } else if (field.type === 'select') {
+        html += `<select class="form-select" id="${id}" data-field-key="${key}"><option value="">选择...</option></select>`;
+    } else if (field.type === 'date') {
+        html += `<input type="date" class="form-control" id="${id}" data-field-key="${key}">`;
+    } else if (field.type === 'time') {
+        const step = field.step ? `step="${esc(field.step)}"` : 'step="1"';
+        html += `<input type="time" class="form-control" id="${id}" data-field-key="${key}" ${step}>`;
+    } else if (field.type === 'number') {
+        const step = field.step ? `step="${esc(field.step)}"` : '';
+        html += `<input type="number" class="form-control" id="${id}" data-field-key="${key}" ${step}>`;
+    } else if (field.type === 'file' || field.type === 'image') {
+        imageFieldKeys.push(key);
+        html += `
+            <input type="file" class="form-control mb-2" id="${id}_upload" data-image-upload-key="${key}" multiple accept="image/*" style="display:none;">
+            <div class="small text-muted mb-1" id="${id}_hint" style="display:none;">可新增图片，也可删除已有图片后保存</div>
+            <div class="d-flex flex-wrap gap-2" id="${id}_preview"></div>
+        `;
+    } else {
+        html += `<input type="text" class="form-control" id="${id}" data-field-key="${key}">`;
+    }
+    wrapper.innerHTML = html;
+    return wrapper;
+}
+
+function setEditable(enabled) {
+    editMode = enabled;
+    document.querySelectorAll('#dynamicForm input, #dynamicForm textarea, #dynamicForm select').forEach((el) => {
+        el.disabled = !enabled;
+    });
+    const dtInput = document.getElementById('field_record_datetime');
+    if (dtInput) dtInput.disabled = !enabled;
+    imageFieldKeys.forEach((key) => {
+        const upload = document.getElementById(`field_${key}_upload`);
+        const hint = document.getElementById(`field_${key}_hint`);
+        if (upload) {
+            upload.disabled = !enabled;
+            upload.style.display = enabled ? '' : 'none';
+        }
+        if (hint) hint.style.display = enabled ? '' : 'none';
+    });
+    renderAllImagePreviews();
+    const updateBtn = document.getElementById('updateBtn');
+    if (updateBtn) {
+        updateBtn.textContent = enabled ? '保存' : '更新';
+        updateBtn.className = enabled ? 'btn btn-success' : 'btn btn-primary';
+    }
+}
+
+function buildDateTimeValue(dateStr, timeStr) {
+    const d = String(dateStr || '').trim();
+    const t = String(timeStr || '').trim();
+    if (!d) return '';
+    if (!t) return `${d}T00:00`;
+    if (t.length >= 8) return `${d}T${t.slice(0, 8)}`;
+    return `${d}T${t.slice(0, 5)}`;
+}
+
+function syncCombinedToFields() {
+    const dt = document.getElementById('field_record_datetime');
+    const dateInput = document.getElementById('field_record_date');
+    const timeInput = document.getElementById('field_record_time');
+    if (!dt || !dateInput || !timeInput) return;
+    const raw = String(dt.value || '').trim();
+    if (!raw.includes('T')) return;
+    const [d, t] = raw.split('T');
+    dateInput.value = d || '';
+    timeInput.value = String(t || '').slice(0, 8);
+}
+
+function initCombinedDateTimeFieldFromRecord() {
+    if (!combineDateTimeEnabled) return;
+    const dateWrap = document.querySelector('[data-field-key="record_date"]');
+    const timeWrap = document.querySelector('[data-field-key="record_time"]');
+    if (!dateWrap || !timeWrap) return;
+    const dateInput = dateWrap.querySelector('input[data-field-key="record_date"]');
+    const timeInput = timeWrap.querySelector('input[data-field-key="record_time"]');
+    if (!dateInput || !timeInput) return;
+    const combinedWrap = document.createElement('div');
+    combinedWrap.className = dateWrap.className;
+    combinedWrap.dataset.fieldKey = 'record_datetime';
+    combinedWrap.innerHTML = `
+        <label class="form-label">日期时间</label>
+        <input type="datetime-local" class="form-control" id="field_record_datetime" step="1">
+    `;
+    dateWrap.insertAdjacentElement('beforebegin', combinedWrap);
+    dateWrap.style.display = 'none';
+    timeWrap.style.display = 'none';
+    const dtInput = combinedWrap.querySelector('#field_record_datetime');
+    dtInput.value = buildDateTimeValue(dateInput.value, timeInput.value);
+    dtInput.addEventListener('change', syncCombinedToFields);
+    dtInput.addEventListener('input', syncCombinedToFields);
+}
+
+function parseImageList(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map((x) => String(x)).filter(Boolean);
+    if (typeof raw === 'string') {
+        try {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) return arr.map((x) => String(x)).filter(Boolean);
+        } catch (_) {
+            return [];
+        }
+    }
+    return [];
+}
+
+function ensureImageFieldState(key) {
+    if (!imageFieldState[key]) {
+        imageFieldState[key] = {
+            existing: [],
+            removed: new Set(),
+            newFiles: [],
+        };
+    }
+    return imageFieldState[key];
+}
+
+function bindImageUploadInputs() {
+    imageFieldKeys.forEach((key) => {
+        const upload = document.getElementById(`field_${key}_upload`);
+        if (!upload || upload.dataset.bound === '1') return;
+        upload.dataset.bound = '1';
+        upload.addEventListener('change', () => {
+            const state = ensureImageFieldState(key);
+            state.newFiles.push(...Array.from(upload.files || []));
+            upload.value = '';
+            renderImagePreview(key);
+        });
+    });
+}
+
+function renderImagePreview(key) {
+    const state = ensureImageFieldState(key);
+    const preview = document.getElementById(`field_${key}_preview`);
+    if (!preview) return;
+    const existingHtml = state.existing
+        .filter((url) => !state.removed.has(url))
+        .map((url) => `
+            <div class="position-relative">
+                <a href="${esc(url)}" target="_blank" rel="noopener">
+                    <img src="${esc(url)}" style="width:96px;height:96px;object-fit:cover;border:1px solid #ddd;border-radius:8px;">
+                </a>
+                ${editMode ? `<button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0" data-remove-existing="${esc(url)}" style="transform:translate(30%,-30%);padding:0 6px;">×</button>` : ''}
+            </div>
+        `).join('');
+    const newHtml = state.newFiles.map((file, idx) => `
+        <div class="position-relative">
+            <img src="${URL.createObjectURL(file)}" style="width:96px;height:96px;object-fit:cover;border:1px solid #ddd;border-radius:8px;">
+            ${editMode ? `<button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0" data-remove-new="${idx}" style="transform:translate(30%,-30%);padding:0 6px;">×</button>` : ''}
+        </div>
+    `).join('');
+    preview.innerHTML = existingHtml + newHtml;
+    preview.querySelectorAll('button[data-remove-existing]').forEach((btn) => {
+        btn.onclick = () => {
+            const url = String(btn.dataset.removeExisting || '');
+            state.removed.add(url);
+            renderImagePreview(key);
+        };
+    });
+    preview.querySelectorAll('button[data-remove-new]').forEach((btn) => {
+        btn.onclick = () => {
+            const idx = Number(btn.dataset.removeNew || -1);
+            if (idx >= 0) state.newFiles.splice(idx, 1);
+            renderImagePreview(key);
+        };
+    });
+}
+
+function renderAllImagePreviews() {
+    imageFieldKeys.forEach((key) => renderImagePreview(key));
+}
+
+function fillFieldValues(record) {
+    for (const [key, val] of Object.entries(record || {})) {
+        const el = document.querySelector(
+            `#dynamicForm input[data-field-key="${key}"], #dynamicForm textarea[data-field-key="${key}"], #dynamicForm select[data-field-key="${key}"]`
+        );
+        if (!el) continue;
+        if (el.tagName === 'SELECT') {
+            const v = val == null ? '' : String(val);
+            const hasValue = Array.from(el.options).some(op => op.value === v);
+            if (!hasValue && v) {
+                const op = document.createElement('option');
+                op.value = v;
+                op.textContent = v;
+                el.appendChild(op);
+            }
+            el.value = v;
+        } else {
+            el.value = val == null ? '' : String(val);
+        }
+    }
+    for (const key of imageFieldKeys) {
+        const state = ensureImageFieldState(key);
+        state.existing = parseImageList(record[key]);
+        state.removed = new Set();
+        state.newFiles = [];
+    }
+    renderAllImagePreviews();
+}
+
+async function renderForm(layout, record) {
+    const container = document.getElementById('dynamicForm');
+    container.innerHTML = '';
+    imageFieldKeys = [];
+    const dependentSelects = [];
+    for (const group of (layout.groups || [])) {
+        const section = document.createElement('div');
+        section.className = 'form-group-block mb-1';
+        section.innerHTML = `
+            <div class="section-title"><i class="bi ${esc(group.icon || 'bi-ui-checks-grid')}"></i> ${esc(group.title || '')}</div>
+            <div class="row" data-group-fields></div>
+        `;
+        const fieldsRow = section.querySelector('[data-group-fields]');
+        for (const field of (group.fields || [])) {
+            const fieldWrap = createInput(field);
+            fieldsRow.appendChild(fieldWrap);
+            if (field.type === 'select') {
+                const select = fieldWrap.querySelector('select');
+                if (field.depends_on) {
+                    dependentSelects.push({ field, select });
+                } else {
+                    const options = await fetchOptions(field.source);
+                    options.forEach(opt => {
+                        const op = document.createElement('option');
+                        op.value = String(opt.value ?? '');
+                        op.textContent = String(opt.label ?? opt.value ?? '');
+                        select.appendChild(op);
+                    });
+                }
+            }
+        }
+        container.appendChild(section);
+    }
+    fillFieldValues(record);
+    bindImageUploadInputs();
+    for (const dep of dependentSelects) {
+        const { field, select } = dep;
+        const parentSel = document.getElementById(`field_${field.depends_on}`);
+        if (!parentSel) continue;
+        const refill = async (desiredValue = '') => {
+            const parentValue = String(parentSel.value || '').trim();
+            select.innerHTML = '<option value="">选择...</option>';
+            if (!parentValue || !field.source) return;
+            const options = await fetchOptions(field.source);
+            const filtered = options.filter((opt) => {
+                const rawName = String(opt.rawName || '');
+                const meta = (opt && typeof opt.meta === 'object' && opt.meta !== null) ? opt.meta : {};
+                const metaHit = Object.values(meta).some(v => String(v || '').trim() === parentValue);
+                const rawHit = rawName.includes(parentValue);
+                return metaHit || rawHit;
+            });
+            filtered.forEach((opt) => {
+                const op = document.createElement('option');
+                op.value = String(opt.value ?? '');
+                op.textContent = String(opt.label ?? opt.value ?? '');
+                select.appendChild(op);
+            });
+            if (desiredValue) {
+                const desired = String(desiredValue);
+                if (Array.from(select.options).some((op) => op.value === desired)) {
+                    select.value = desired;
+                }
+            }
+        };
+        await refill(record ? record[field.key] : '');
+        if (parentSel.dataset.depBound !== '1') {
+            parentSel.dataset.depBound = '1';
+            parentSel.addEventListener('change', () => {
+                select.value = '';
+                refill('');
+            });
+        }
+    }
+    if (combineDateTimeEnabled) {
+        initCombinedDateTimeFieldFromRecord();
+    }
+    setEditable(false);
+}
+
+function collectPayload() {
+    if (combineDateTimeEnabled) syncCombinedToFields();
+    const payload = {};
+    document.querySelectorAll('#dynamicForm input[data-field-key], #dynamicForm textarea[data-field-key], #dynamicForm select[data-field-key]').forEach((el) => {
+        const k = el.dataset.fieldKey;
+        if (!k || k === 'form_page') return;
+        if (imageFieldKeys.includes(k)) return;
+        payload[k] = el.value ?? '';
+    });
+    return payload;
+}
+
+async function saveRecord() {
+    const payload = collectPayload();
+    const res = await fetch(`/api/records/${encodeURIComponent(FORM_PAGE)}/${RECORD_ID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || data.message || '保存失败');
+        return false;
+    }
+    alert('保存成功');
+    setEditable(false);
+    return true;
+}
+
+async function saveRecordImages() {
+    const fd = new FormData();
+    let hasChange = false;
+    for (const key of imageFieldKeys) {
+        const state = ensureImageFieldState(key);
+        const keepList = state.existing.filter((url) => !state.removed.has(url));
+        fd.append(`keep_${key}`, JSON.stringify(keepList));
+        if (state.removed.size > 0 || state.newFiles.length > 0) hasChange = true;
+        state.newFiles.forEach((f) => fd.append(key, f));
+    }
+    if (!hasChange) return true;
+    const res = await fetch(`/api/records/${encodeURIComponent(FORM_PAGE)}/${RECORD_ID}/images`, {
+        method: 'POST',
+        body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || data.message || '图片更新失败');
+        return false;
+    }
+    return true;
+}
+
+async function deleteRecord() {
+    if (!confirm('确认删除这条记录吗？')) return;
+    const res = await fetch(`/api/records/${encodeURIComponent(FORM_PAGE)}/${RECORD_ID}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || data.message || '删除失败');
+        return;
+    }
+    window.location.href = '/records';
+}
+
+async function boot() {
+    const [layoutRes, recordRes] = await Promise.all([
+        fetch(`/api/form-layout?page=${encodeURIComponent(FORM_PAGE)}`),
+        fetch(`/api/records/${encodeURIComponent(FORM_PAGE)}/${RECORD_ID}`),
+    ]);
+    const layout = await layoutRes.json();
+    const record = await recordRes.json();
+    combineDateTimeEnabled = !!layout.combine_datetime;
+    currentRecord = record || {};
+    await renderForm(layout, currentRecord);
+
+    const updateBtn = document.getElementById('updateBtn');
+    if (updateBtn) {
+        updateBtn.addEventListener('click', async () => {
+            if (!editMode) {
+                setEditable(true);
+                return;
+            }
+            const saved = await saveRecord();
+            if (!saved) return;
+            const ok = await saveRecordImages();
+            if (!ok) return;
+            window.location.reload();
+        });
+    }
+    const deleteBtn = document.getElementById('deleteBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', deleteRecord);
+    }
+}
+
+boot().catch((err) => {
+    alert(String(err?.message || err || '加载失败'));
+});
+</script>
+{% endblock %}

@@ -1,0 +1,47 @@
+#################################################
+##                 USERS TEMPLATE              ##
+##---------------------------------------------##
+##    title: users title                       ##
+##    version: users version                   ##
+##    db_info: database info                   ##
+##    <db_info#table_name>: seed data          ##
+##    editable_columns: editable columns       ##
+##    show_columns: show columns               ##
+#################################################
+
+title: 用户列表
+version: <用户版本号>
+
+db_info:
+  table_name: users
+  columns:
+    id: INTEGER PRIMARY KEY AUTOINCREMENT
+    username: TEXT NOT NULL UNIQUE
+    password_hash: TEXT NOT NULL
+    role_id: INTEGER NOT NULL
+    full_name: TEXT
+    email: TEXT
+    phone: TEXT
+    status: INTEGER DEFAULT 1          # 1=激活, 0=禁用
+    created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    modified_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    deleted: INTEGER DEFAULT 0
+    deleted_at: TIMESTAMP
+    deleted_by: TEXT
+
+column_mapping:
+  roles_name: role_id#roles.name
+
+show_columns: [id, username, full_name, roles_name, email, phone, status, modified_at]
+
+editable_columns: [username, full_name, roles_name, email, phone, status]
+
+column_labels:
+  id: 编号
+  username: 用户名
+  full_name: 姓名
+  roles_name: 角色
+  email: 邮箱
+  phone: 手机号
+  status: 状态
+  modified_at: 更新时间

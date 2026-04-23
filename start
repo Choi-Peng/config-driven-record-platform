@@ -1,0 +1,26 @@
+#!/bin/bash
+# 快速启动 - 用于测试
+#
+# 依赖：项目根目录下已由 uv 创建的虚拟环境 .venv
+#   若尚未创建，请在项目根执行：./deploy
+#   或手动：uv venv .venv && source .venv/bin/activate && uv pip install -r requirements.txt
+PROJECT_NAME=$(grep -E '^PROJECT_NAME=' .env | cut -d '=' -f 2)
+
+cd "$(dirname "$0")"
+if [[ ! -f .venv/bin/activate ]]; then
+    echo "❌ 未找到 .venv。请先在项目根目录执行："
+    echo "   ./deploy"
+    echo "或手动：uv venv .venv && source .venv/bin/activate && uv pip install -r requirements.txt"
+    exit 1
+fi
+
+# shellcheck source=/dev/null
+source .venv/bin/activate
+# 必须在项目根运行，否则 `import app` 无法解析（包名 app 对应根目录下的 app/）
+echo "🚀 启动$PROJECT_NAME..."
+echo ""
+echo "访问地址：http://localhost:8000"
+echo "按 Ctrl+C 停止服务"
+echo ""
+
+python -m app.main

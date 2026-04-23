@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}新建 {{ table_title or table_key }} — {{ site_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-plus-circle"></i> 新建 {{ table_title or table_key }}
+                </div>
+                <div class="card-body">
+                    <form id="createForm">
+                        <div class="row" id="fieldsWrap"></div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success">提交</button>
+                            <a class="btn btn-outline-secondary" href="/manage/{{ table_key }}">返回</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TABLE_KEY = "{{ table_key }}";
+let TABLE_TITLE = "{{ table_title or table_key }}";
+let EDITABLE_COLUMNS = [];
+let COLUMN_LABELS = {};
+
+function esc(v) {
+    return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+}
+
+function renderFields() {
+    const wrap = document.getElementById("fieldsWrap");
+    wrap.innerHTML = EDITABLE_COLUMNS.map((col) => `
+        <div class="col-md-6 mb-3">
+            <label class="form-label">${esc(COLUMN_LABELS[col] || col)}</label>
+            <input class="form-control" name="${esc(col)}" />
+        </div>
+    `).join("");
+}
+
+async function boot() {
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/meta`);
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.detail || "加载字段失败");
+    }
+    TABLE_TITLE = String(data.title || TABLE_TITLE || TABLE_KEY);
+    EDITABLE_COLUMNS = Array.isArray(data.editable_columns) ? data.editable_columns : [];
+    COLUMN_LABELS = (data.column_labels && typeof data.column_labels === "object") ? data.column_labels : {};
+    document.title = `新建 ${TABLE_TITLE} — {{ site_title }}`;
+    const cardHeader = document.querySelector(".card-header");
+    if (cardHeader) cardHeader.innerHTML = `<i class="bi bi-plus-circle"></i> 新建 ${esc(TABLE_TITLE)}`;
+    renderFields();
+}
+
+document.getElementById("createForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const payload = {};
+    for (const col of EDITABLE_COLUMNS) {
+        const input = document.querySelector(`[name="${col}"]`);
+        if (!input) continue;
+        const val = String(input.value ?? "").trim();
+        if (val === "") continue;
+        payload[col] = val;
+    }
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || "创建失败");
+        return;
+    }
+    window.location.href = `/manage/${encodeURIComponent(TABLE_KEY)}`;
+});
+
+boot().catch((e) => {
+    alert(e.message || e);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+{% block title %}{{ form_page_title }} — {{ site_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 col-xl-7">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-pencil-square"></i> {{ form_page_title }}
+                </div>
+                <div class="card-body">
+                    <form id="recordForm">
+                        <div id="dynamicForm"></div>
+                        <input type="hidden" id="form_page" data-field-key="form_page" value="{{ current_form_page }}">
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-check-circle"></i> 提交记录
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const FORM_PAGE = "{{ current_form_page }}";
+    const CAN_CREATE_FORM = {{ "true" if can_create_form else "false" }};
+    const CURRENT_RECORDER = "{{ (current_user.full_name or current_user.username) if current_user else '' }}";
+
+    function esc(v) {
+        return String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
+    }
+
+    async function fetchOptions(source, formPage = FORM_PAGE, fieldKey = '') {
+        if (!source) return [];
+
+        if (typeof source === 'object' && source !== null) {
+            const sourceType = source.type || 'options';
+
+            if (sourceType === 'options') {
+                // 静态选项
+                const values = source.values || [];
+                return values.map(v => {
+                    if (typeof v === 'object') {
+                        return {
+                            value: String(v.value || ''),
+                            label: String(v.label || v.value || ''),
+                            rawName: String(v.rawName || v.label || v.value || '')
+                        };
+                    } else {
+                        const strVal = String(v);
+                        return {
+                            value: strVal,
+                            label: strVal,
+                            rawName: strVal
+                        };
+                    }
+                });
+            } else if (sourceType === 'database') {
+                const values = source.values || {};
+                const table = values.table;
+                const key = values.key;
+
+                if (!table || !key) return [];
+
+                const res = await fetch(`/api/options/source?source_type=database&table=${encodeURIComponent(table)}&key=${encodeURIComponent(key)}`);
+                const data = await res.json();
+                return data.options || [];
+            }
+        }
+
+        return [];
+    }
+
+    let liveTimeIntervalId = null;
+    let combineDateTimeEnabled = false;
+    const selectedUploadFiles = {};
+
+    function pad2(n) {
+        return String(n).padStart(2, '0');
+    }
+
+    /** Local time as HH:MM:SS for input type=time with step 1 */
+    function localTimeValue(d) {
+        return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    }
+
+    function tickLiveTimeFields() {
+        document.querySelectorAll('input[type="time"][data-live-time]').forEach((el) => {
+            if (el.dataset.liveLocked === '1') return;
+            el.value = localTimeValue(new Date());
+        });
+    }
+
+    function startLiveTimeClock() {
+        if (liveTimeIntervalId !== null) {
+            clearInterval(liveTimeIntervalId);
+            liveTimeIntervalId = null;
+        }
+        tickLiveTimeFields();
+        tickCombinedDateTimeFields();
+        liveTimeIntervalId = setInterval(() => {
+            tickLiveTimeFields();
+            tickCombinedDateTimeFields();
+        }, 1000);
+    }
+
+    function bindLiveTimeFields() {
+        document.querySelectorAll('input[type="time"][data-live-time]').forEach((el) => {
+            if (el.dataset.liveBind === '1') return;
+            el.dataset.liveBind = '1';
+            el.addEventListener('focus', () => { el.dataset.liveLocked = '1'; });
+        });
+    }
+
+    function toDateTimeLocalValue(dateStr, timeStr) {
+        const d = String(dateStr || '').trim();
+        const t = String(timeStr || '').trim();
+        if (!d) return '';
+        if (!t) return `${d}T00:00`;
+        if (t.length >= 8) return `${d}T${t.slice(0, 8)}`;
+        return `${d}T${t.slice(0, 5)}`;
+    }
+
+    function splitDateTimeLocalValue(v) {
+        const raw = String(v || '').trim();
+        if (!raw || !raw.includes('T')) {
+            return { date: '', time: '' };
+        }
+        const [datePart, timePartRaw] = raw.split('T');
+        const timePart = String(timePartRaw || '').slice(0, 8);
+        return { date: datePart, time: timePart };
+    }
+
+    function syncCombinedDateTimeToFields() {
+        const dt = document.getElementById('field_record_datetime');
+        const dateInput = document.getElementById('field_record_date');
+        const timeInput = document.getElementById('field_record_time');
+        if (!dt || !dateInput || !timeInput) return;
+        const parts = splitDateTimeLocalValue(dt.value);
+        dateInput.value = parts.date;
+        timeInput.value = parts.time;
+    }
+
+    function syncFieldsToCombinedDateTime() {
+        const dt = document.getElementById('field_record_datetime');
+        const dateInput = document.getElementById('field_record_date');
+        const timeInput = document.getElementById('field_record_time');
+        if (!dt || !dateInput || !timeInput) return;
+        dt.value = toDateTimeLocalValue(dateInput.value, timeInput.value);
+    }
+
+    function initCombinedDateTimeField() {
+        if (!combineDateTimeEnabled) return;
+        const dateWrap = document.querySelector('[data-field-key="record_date"]');
+        const timeWrap = document.querySelector('[data-field-key="record_time"]');
+        if (!dateWrap || !timeWrap) return;
+        if (document.getElementById('field_record_datetime')) {
+            syncFieldsToCombinedDateTime();
+            return;
+        }
+
+        const dateInput = dateWrap.querySelector('input[data-field-key="record_date"]');
+        const timeInput = timeWrap.querySelector('input[data-field-key="record_time"]');
+        if (!dateInput || !timeInput) return;
+
+        const combinedWrap = document.createElement('div');
+        combinedWrap.className = dateWrap.className;
+        combinedWrap.dataset.fieldKey = 'record_datetime';
+        combinedWrap.innerHTML = `
+            <label class="form-label">日期时间 <span class="text-danger">*</span></label>
+            <input type="datetime-local" class="form-control" id="field_record_datetime" step="1" data-live-datetime="1">
+        `;
+
+        dateWrap.insertAdjacentElement('beforebegin', combinedWrap);
+        dateWrap.style.display = 'none';
+        timeWrap.style.display = 'none';
+
+        const dtInput = combinedWrap.querySelector('#field_record_datetime');
+        dtInput.value = toDateTimeLocalValue(dateInput.value, timeInput.value);
+        dtInput.addEventListener('focus', () => { dtInput.dataset.liveLocked = '1'; });
+        dtInput.addEventListener('change', syncCombinedDateTimeToFields);
+        dtInput.addEventListener('input', syncCombinedDateTimeToFields);
+    }
+
+    function tickCombinedDateTimeFields() {
+        if (!combineDateTimeEnabled) return;
+        const dtInput = document.getElementById('field_record_datetime');
+        if (!dtInput || dtInput.dataset.liveLocked === '1') return;
+        const now = new Date();
+        const dateInput = document.getElementById('field_record_date');
+        const dateValue = (dateInput && dateInput.value) ? dateInput.value : now.toISOString().slice(0, 10);
+        dtInput.value = toDateTimeLocalValue(dateValue, localTimeValue(now));
+        syncCombinedDateTimeToFields();
+    }
+
+    function createInput(field) {
+        const key = field.key;
+        const required = field.required ? 'required' : '';
+        const placeholder = field.placeholder ? `placeholder="${esc(field.placeholder)}"` : '';
+        const styleW = Math.min(12, Math.max(1, Number(field.width || 12)));
+        const wrapper = document.createElement('div');
+        wrapper.className = `col-md-${styleW} mb-3`;
+        wrapper.dataset.fieldKey = key;
+
+        let html = `<label class="form-label">${esc(field.label)}${field.required ? ' <span class="text-danger">*</span>' : ''}</label>`;
+        const id = `field_${key}`;
+
+        if (field.type === 'textarea') {
+            html += `<textarea class="form-control" id="${id}" data-field-key="${key}" rows="${Number(field.rows || 2)}" ${placeholder}></textarea>`;
+        } else if (field.type === 'file' || field.type === 'image') {
+            const accept = field.accept ? `accept="${esc(field.accept)}"` : '';
+            // Image fields default to multi-select; file fields follow config.
+            const allowMultiple = field.type === 'image' ? true : (field.multiple === undefined ? true : !!field.multiple);
+            const multiple = allowMultiple ? 'multiple' : '';
+            html += `<input type="file" class="form-control" id="${id}" data-field-key="${key}" data-field-type="image" ${accept} ${multiple}>
+                     <div class="d-flex flex-wrap gap-2 mt-2" id="${id}_preview"></div>`;
+        } else if (field.type === 'select') {
+            html += `<select class="form-select" id="${id}" data-field-key="${key}" ${required}><option value="">选择...</option></select>`;
+        } else if (field.type === 'date') {
+            html += `<input type="date" class="form-control" id="${id}" data-field-key="${key}" ${required}>`;
+        } else if (field.type === 'time') {
+            const step = field.step ? `step="${esc(field.step)}"` : 'step="1"';
+            const live = (field.default !== undefined && field.default !== null && String(field.default).trim() !== '') ? '' : ' data-live-time="1"';
+            html += `<input type="time" class="form-control" id="${id}" data-field-key="${key}" ${step}${live} ${required}>`;
+        } else if (field.type === 'number') {
+            const step = field.step ? `step="${esc(field.step)}"` : '';
+            html += `<input type="number" class="form-control" id="${id}" data-field-key="${key}" ${step} ${placeholder}>`;
+        } else {
+            html += `<input type="text" class="form-control" id="${id}" data-field-key="${key}" ${placeholder}>`;
+        }
+
+        wrapper.innerHTML = html;
+        return wrapper;
+    }
+
+    async function renderForm(layout) {
+        const container = document.getElementById('dynamicForm');
+        container.innerHTML = '';
+        const groups = Array.isArray(layout.groups) ? layout.groups : [];
+        for (const group of groups) {
+            const section = document.createElement('div');
+            section.className = 'form-group-block mb-1';
+            section.dataset.groupKey = group.key || '';
+            section.innerHTML = `
+                <div class="section-title"><i class="bi ${esc(group.icon || 'bi-ui-checks-grid')}"></i> ${esc(group.title || '')}</div>
+                <div class="row" data-group-fields></div>
+            `;
+            const fieldsRow = section.querySelector('[data-group-fields]');
+            for (const field of (group.fields || [])) {
+                const fieldWrap = createInput(field);
+                fieldsRow.appendChild(fieldWrap);
+                if (field.type === 'select') {
+                    const select = fieldWrap.querySelector('select');
+
+                    // 处理依赖字段
+                    if (field.depends_on) {
+                        const parentSel = fieldsRow.querySelector(`#field_${field.depends_on}`);
+                        const fillDependentOptions = async () => {
+                            const parentValue = parentSel ? parentSel.value : '';
+                            select.innerHTML = '<option value="">选择...</option>';
+
+                            if (parentValue && field.source) {
+                                // 这里可以扩展：根据父值过滤选项
+                                const options = await fetchOptions(field.source, FORM_PAGE, field.key);
+                                // 简单过滤：只显示与父值相关的选项
+                                const parentText = String(parentValue || '').trim();
+                                const filteredOptions = options.filter(opt => {
+                                    const rawName = String(opt.rawName || '');
+                                    const meta = (opt && typeof opt.meta === 'object' && opt.meta !== null) ? opt.meta : {};
+                                    const metaHit = Object.values(meta).some(v => String(v || '').trim() === parentText);
+                                    const rawHit = rawName.includes(parentText);
+                                    return metaHit || rawHit;
+                                });
+                                filteredOptions.forEach(opt => {
+                                    const op = document.createElement('option');
+                                    op.value = opt.value;
+                                    op.textContent = opt.label;
+                                    if (opt.rawName) op.dataset.rawName = opt.rawName;
+                                    if (field.default && String(field.default) === opt.value) op.selected = true;
+                                    select.appendChild(op);
+                                });
+                            }
+                        };
+
+                        if (parentSel) {
+                            parentSel.addEventListener('change', () => {
+                                select.value = '';
+                                fillDependentOptions();
+                            });
+                        }
+                        await fillDependentOptions();
+                    } else {
+                        // 普通select字段
+                        let options = [];
+                        if (Array.isArray(field.options) && field.options.length > 0) {
+                            // 旧格式：field.options数组
+                            options = field.options.map(x => ({
+                                value: String(x),
+                                label: String(x),
+                                rawName: String(x)
+                            }));
+                        } else if (field.source) {
+                            // 新格式：使用fetchOptions函数
+                            options = await fetchOptions(field.source, FORM_PAGE, field.key);
+                        }
+
+                        options.forEach(opt => {
+                            const op = document.createElement('option');
+                            op.value = opt.value;
+                            op.textContent = opt.label;
+                            if (opt.rawName) op.dataset.rawName = opt.rawName;
+                            if (field.default && String(field.default) === opt.value) op.selected = true;
+                            select.appendChild(op);
+                        });
+                    }
+                } else if (field.default) {
+                    const input = fieldWrap.querySelector('[data-field-key]');
+                    if (input) input.value = field.default;
+                }
+            }
+            container.appendChild(section);
+        }
+        const dateInput = document.getElementById('field_record_date');
+        if (dateInput && !dateInput.value) dateInput.valueAsDate = new Date();
+        const recorderInput = document.getElementById('field_recorder');
+        if (recorderInput && !String(recorderInput.value || '').trim() && CURRENT_RECORDER) {
+            recorderInput.value = CURRENT_RECORDER;
+        }
+        startLiveTimeClock();
+        bindLiveTimeFields();
+        if (combineDateTimeEnabled) {
+            syncFieldsToCombinedDateTime();
+            initCombinedDateTimeField();
+        }
+        initFilePickers();
+        applyFormEditable(CAN_CREATE_FORM);
+    }
+
+    function applyFormEditable(enabled) {
+        document.querySelectorAll('#dynamicForm input, #dynamicForm textarea, #dynamicForm select').forEach((el) => {
+            el.disabled = !enabled;
+        });
+        const submitBtn = document.querySelector('#recordForm button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = !enabled;
+            if (!enabled) {
+                submitBtn.classList.remove('btn-success');
+                submitBtn.classList.add('btn-secondary');
+                submitBtn.textContent = '无提交权限（只读）';
+            }
+        }
+    }
+
+    function initFilePickers() {
+        document.querySelectorAll('input[data-field-type="image"], input[data-field-type="file"]').forEach((input) => {
+            if (input.dataset.bound === '1') return;
+            input.dataset.bound = '1';
+            selectedUploadFiles[input.id] = selectedUploadFiles[input.id] || [];
+            input.addEventListener('change', () => {
+                const preview = document.getElementById(`${input.id}_preview`);
+                if (!preview) return;
+                const prior = selectedUploadFiles[input.id] || [];
+                const incoming = Array.from(input.files || []);
+                const merged = [...prior, ...incoming];
+                selectedUploadFiles[input.id] = merged;
+                const dt = new DataTransfer();
+                merged.forEach((f) => dt.items.add(f));
+                input.files = dt.files;
+                renderSelectedFiles(input, preview);
+            });
+        });
+    }
+
+    function renderSelectedFiles(input, preview) {
+        preview.innerHTML = '';
+        const files = selectedUploadFiles[input.id] || Array.from(input.files || []);
+        files.forEach((file, idx) => {
+            const box = document.createElement('div');
+            box.className = 'position-relative';
+            box.innerHTML = `
+                <img style="width:96px;height:96px;object-fit:cover;border:1px solid #ddd;border-radius:8px;">
+                <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0" style="transform:translate(30%,-30%);padding:0 6px;">×</button>
+            `;
+            const img = box.querySelector('img');
+            img.src = URL.createObjectURL(file);
+            box.querySelector('button').onclick = () => {
+                const nextFiles = files.filter((_, i) => i !== idx);
+                selectedUploadFiles[input.id] = nextFiles;
+                const dt = new DataTransfer();
+                nextFiles.forEach((f) => dt.items.add(f));
+                input.files = dt.files;
+                renderSelectedFiles(input, preview);
+            };
+            preview.appendChild(box);
+        });
+    }
+
+    async function boot() {
+        const res = await fetch(`/api/form-layout?page=${encodeURIComponent(FORM_PAGE)}`);
+        const layout = await res.json();
+        combineDateTimeEnabled = !!layout.combine_datetime;
+        await renderForm(layout);
+    }
+
+    document.getElementById('recordForm').onsubmit = async (e) => {
+        e.preventDefault();
+        if (!CAN_CREATE_FORM) {
+            alert('当前角色没有该表单的提交权限');
+            return;
+        }
+        if (combineDateTimeEnabled) syncCombinedDateTimeToFields();
+        const formData = new FormData();
+        document.querySelectorAll('[data-field-key]').forEach((el) => {
+            if (el.dataset.fieldType === 'file' || el.dataset.fieldType === 'image') {
+                const files = selectedUploadFiles[el.id] || Array.from(el.files || []);
+                for (const file of files) formData.append(el.dataset.fieldKey, file);
+                return;
+            }
+            const v = el.value ?? '';
+            if (v === '' && !el.required) return;
+            formData.append(el.dataset.fieldKey, v);
+        });
+        const res = await fetch('/api/records', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message + '\n可在「查看记录」页面浏览与导出。');
+            e.target.reset();
+            Object.keys(selectedUploadFiles).forEach((k) => { selectedUploadFiles[k] = []; });
+            document.querySelectorAll('input[data-field-type="image"], input[data-field-type="file"]').forEach((input) => {
+                const preview = document.getElementById(`${input.id}_preview`);
+                if (preview) preview.innerHTML = '';
+            });
+            document.querySelectorAll('select[data-crop-names]').forEach((sel) => {
+                sel.innerHTML = '<option value="">选择...</option>';
+            });
+            const dateInput = document.getElementById('field_record_date');
+            if (dateInput) dateInput.valueAsDate = new Date();
+            document.querySelectorAll('input[type="time"][data-live-time]').forEach((el) => {
+                delete el.dataset.liveLocked;
+                el.value = localTimeValue(new Date());
+            });
+            tickLiveTimeFields();
+            const dtInput = document.getElementById('field_record_datetime');
+            if (dtInput) {
+                delete dtInput.dataset.liveLocked;
+                tickCombinedDateTimeFields();
+            }
+            if (combineDateTimeEnabled) syncFieldsToCombinedDateTime();
+        } else {
+            alert('提交失败：' + (data.message || '未知错误'));
+        }
+    };
+
+    boot();
+</script>
+{% endblock %}

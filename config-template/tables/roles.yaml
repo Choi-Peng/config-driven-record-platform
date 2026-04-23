@@ -1,0 +1,40 @@
+#################################################
+##                 ROLES TEMPLATE              ##
+##---------------------------------------------##
+##    title: roles title                       ##
+##    version: roles version                   ##
+##    db_info: database info                   ##
+##    <db_info#table_name>: seed data          ##
+##    editable_columns: editable columns       ##
+##    show_columns: show columns               ##
+#################################################
+title: 角色列表
+version: <角色版本号>
+
+db_info:
+  table_name: roles
+  columns:
+    id: INTEGER PRIMARY KEY AUTOINCREMENT
+    name: TEXT NOT NULL
+    description: TEXT
+    created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    modified_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    deleted: INTEGER DEFAULT 0
+    deleted_at: TIMESTAMP
+    deleted_by: TEXT
+
+seed_data:
+  - name: <角色名1>
+    description: <角色描述1>
+  - name: <角色名2>
+    description: <角色描述2>
+
+show_columns: [id, name, description, modified_at]
+
+editable_columns: [name, description]
+
+column_labels:
+  id: 编号
+  name: 角色名
+  description: 描述
+  modified_at: 更新时间

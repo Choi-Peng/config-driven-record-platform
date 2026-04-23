@@ -1,0 +1,31 @@
+################################################
+##         FORM COMMON FIELD TEMPLATE         ##
+##--------------------------------------------##
+##    version: form base version              ##
+##    field_templates: field templates        ##
+##    fields: fields config                   ##
+################################################
+
+version: <表单版本号>
+field_templates: &field_templates
+  <字段模板键1>: &<字段模板键1>
+    type: <字段类型1>
+    required: <是否必填1>
+    width: <字段宽度1>
+    db_type: <字段数据库类型1>
+  <字段模板键2>: &<字段模板键2>
+    type: <字段类型2>
+    required: <是否必填2>
+    width: <字段宽度2>
+    db_type: <字段数据库类型2>
+common_fields: &common_fields
+  <公共字段键1>: &<公共字段键1> # 使用公共字段键1的值创建新字段
+    <<: *<字段模板键1>
+    key: <公共字段键1>
+    label: <公共字段标签1>
+  <公共字段键2>: &<公共字段键2> # 使用公共字段键2的值创建新字段, 并覆盖其字段类型
+    <<: *<字段模板键2>
+    key: <公共字段键2>
+    label: <公共字段标签2>
+    type: <新字段类型>
+show_columns: [<展示字段1>, <展示字段2>]

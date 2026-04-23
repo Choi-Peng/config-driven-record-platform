@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}{{ table_title or table_key }} 管理 — {{ site_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0"><i class="bi bi-table"></i> {{ table_title or table_key }} 管理</h5>
+        <a class="btn btn-success btn-sm" href="/manage/{{ table_key }}/new">
+            <i class="bi bi-plus-circle"></i> 新建
+        </a>
+    </div>
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-hover mb-0">
+                    <thead class="table-light" id="tblHead"></thead>
+                    <tbody id="tblBody">
+                        <tr><td class="text-center text-muted py-4">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TABLE_KEY = "{{ table_key }}";
+let TABLE_TITLE = "{{ table_title or table_key }}";
+let SHOW_COLUMNS = [];
+let EDITABLE_COLUMNS = [];
+let COLUMN_LABELS = {};
+
+function esc(v) {
+    return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+}
+
+async function loadMeta() {
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/meta`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "加载元数据失败");
+    TABLE_TITLE = String(data.title || TABLE_TITLE || TABLE_KEY);
+    SHOW_COLUMNS = Array.isArray(data.show_columns) ? data.show_columns : [];
+    EDITABLE_COLUMNS = Array.isArray(data.editable_columns) ? data.editable_columns : [];
+    COLUMN_LABELS = (data.column_labels && typeof data.column_labels === 'object') ? data.column_labels : {};
+    document.title = `${TABLE_TITLE} 管理 — {{ site_title }}`;
+    const heading = document.querySelector("h5.mb-0");
+    if (heading) heading.innerHTML = `<i class="bi bi-table"></i> ${esc(TABLE_TITLE)} 管理`;
+}
+
+function displayColumnLabel(col) {
+    if (col === "actions") return "操作";
+    return String(COLUMN_LABELS[col] || col);
+}
+
+function renderHeader() {
+    const head = document.getElementById("tblHead");
+    const cols = [...SHOW_COLUMNS, "actions"];
+    head.innerHTML = `<tr>${cols.map((c) => `<th>${esc(displayColumnLabel(c))}</th>`).join("")}</tr>`;
+}
+
+function buildEditablePayload(item) {
+    const out = {};
+    for (const k of EDITABLE_COLUMNS) {
+        out[k] = item[k] ?? "";
+    }
+    return out;
+}
+
+async function editItem(item) {
+    const seed = JSON.stringify(buildEditablePayload(item), null, 2);
+    const text = prompt("编辑 JSON（仅可编辑字段）", seed);
+    if (!text) return;
+    let payload = {};
+    try {
+        payload = JSON.parse(text);
+    } catch (e) {
+        alert("JSON 格式错误");
+        return;
+    }
+    const id = Number(item.id || 0);
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || "更新失败");
+        return;
+    }
+    await loadItems();
+}
+
+async function deleteItem(id) {
+    if (!confirm("确认删除该记录吗？")) return;
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || "删除失败");
+        return;
+    }
+    await loadItems();
+}
+
+async function loadItems() {
+    const body = document.getElementById("tblBody");
+    body.innerHTML = `<tr><td colspan="${SHOW_COLUMNS.length + 1}" class="text-center text-muted py-4">加载中...</td></tr>`;
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}`);
+    const data = await res.json().catch(() => ({}));
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!res.ok) {
+        body.innerHTML = `<tr><td colspan="${SHOW_COLUMNS.length + 1}" class="text-danger py-3">${esc(data.detail || "加载失败")}</td></tr>`;
+        return;
+    }
+    if (!items.length) {
+        body.innerHTML = `<tr><td colspan="${SHOW_COLUMNS.length + 1}" class="text-center text-muted py-4">暂无数据</td></tr>`;
+        return;
+    }
+    body.innerHTML = items.map((item) => {
+        const tds = SHOW_COLUMNS.map((col) => `<td>${esc(item[col] ?? "")}</td>`).join("");
+        return `<tr>${tds}<td>
+            <button class="btn btn-outline-primary btn-sm me-1" data-action="edit" data-id="${Number(item.id || 0)}">编辑</button>
+            <button class="btn btn-outline-danger btn-sm" data-action="delete" data-id="${Number(item.id || 0)}">删除</button>
+        </td></tr>`;
+    }).join("");
+    body.querySelectorAll("button[data-action='edit']").forEach((btn) => {
+        const id = Number(btn.dataset.id || 0);
+        const item = items.find((x) => Number(x.id || 0) === id);
+        btn.onclick = () => editItem(item || {});
+    });
+    body.querySelectorAll("button[data-action='delete']").forEach((btn) => {
+        const id = Number(btn.dataset.id || 0);
+        btn.onclick = () => deleteItem(id);
+    });
+}
+
+async function boot() {
+    try {
+        await loadMeta();
+        renderHeader();
+        await loadItems();
+    } catch (e) {
+        document.getElementById("tblBody").innerHTML = `<tr><td class="text-danger py-3">${esc(e.message || e)}</td></tr>`;
+    }
+}
+
+boot();
+</script>
+{% endblock %}

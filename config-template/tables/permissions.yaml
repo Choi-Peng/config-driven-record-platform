@@ -1,0 +1,57 @@
+#################################################
+##                 PERMISSIONS TEMPLATE       ##
+##---------------------------------------------##
+##    title: permissions title                ##
+##    version: permissions version            ##
+##    db_info: database info                  ##
+##    <db_info#table_name>: seed data         ##
+##    editable_columns: editable columns      ##
+##    show_columns: show columns              ##
+#################################################
+title: 权限配置表
+version: <权限版本号>
+
+db_info:
+  table_name: permissions
+  columns:
+    id: INTEGER PRIMARY KEY AUTOINCREMENT
+    resource_type: TEXT NOT NULL        # 'table' 或 'form'
+    resource_name: TEXT NOT NULL        # 表名或表单名
+    action: TEXT NOT NULL               # 'read', 'create', 'update', 'delete'
+    role_name: TEXT NOT NULL            # 角色名称
+    allowed: INTEGER DEFAULT 0          # 1=允许, 0=拒绝
+    priority: INTEGER DEFAULT 0         # 优先级（数字越大优先级越高）
+    created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    modified_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    deleted: INTEGER DEFAULT 0
+    deleted_at: TIMESTAMP
+    deleted_by: TEXT
+
+seed_data:
+  # 表权限
+  - resource_type: <资源类型>
+    resource_name: <资源名>
+    action: [<动作1>, <动作2>, <动作3>]
+    role_name: <角色名>
+    allowed: 1 # 允许
+    priority: 10
+  - resource_type: <资源类型>
+    resource_name: <资源名>
+    action: [<动作1>, <动作2>, <动作3>]
+    role_name: <角色名>
+    allowed: 0 # 拒绝
+    priority: 11
+
+show_columns: [id, resource_type, resource_name, action, role_name, allowed, priority, modified_at]
+
+editable_columns: [resource_type, resource_name, action, role_name, allowed, priority]
+
+column_labels:
+  id: 编号
+  resource_type: 资源类型
+  resource_name: 资源名称
+  action: 操作
+  role_name: 角色
+  allowed: 允许
+  priority: 优先级
+  modified_at: 更新时间

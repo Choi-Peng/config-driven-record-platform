@@ -1,0 +1,43 @@
+#################################################
+##                 TABLE TEMPLATE              ##
+##---------------------------------------------##
+##    title: table title                       ##
+##    version: table version                   ##
+##    db_info: database info                   ##
+##    <db_info#table_name>: seed data          ##
+##    editable_columns: editable columns       ##
+##    show_columns: show columns               ##
+#################################################
+
+title: <表标题>
+version: <表版本号>
+db_info: # used to generate table SQL
+  table_name: <表名>
+  columns:
+    id: INTEGER PRIMARY KEY AUTOINCREMENT
+    <字段名1>: <字段类型1> <可选: NOT NULL DEFAULT <默认值>>
+    <字段名2>: <字段类型2> <可选: NOT NULL DEFAULT <默认值>>
+    created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    modified_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    deleted: INTEGER DEFAULT 0
+    deleted_at: TIMESTAMP
+    deleted_by: TEXT
+  foreign_keys:
+    <外键名1>: <外键表名.字段名>
+  indexes:
+    <索引名1>: <字段名1>
+  triggers:
+    <触发器名1>: <触发器SQL>
+seed_data: # seed data for the table
+  - <数据名1>: <数据值1>
+  - <数据名2>: <数据值2>
+column_mapping:
+  <字段映射名1>: <字段映射值1>
+  <字段映射名2>: <字段映射值2>
+editable_columns: [<可编辑字段1>, <可编辑字段2>]
+show_columns: [<展示字段1>, <展示字段2>]
+column_labels:
+  id: 编号
+  <字段名1>: <字段标签1>
+  <字段名2>: <字段标签2>
+  modified_at: 更新时间

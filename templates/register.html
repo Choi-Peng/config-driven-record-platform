@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}用户注册 — {{ site_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5" style="max-width: 480px;">
+    <div class="card shadow">
+        <div class="card-header bg-success text-white">
+            <i class="bi bi-person-plus"></i> 用户注册
+        </div>
+        <div class="card-body">
+            {% if error == 'username' %}
+            <div class="alert alert-warning py-2">用户名至少 3 个字符。</div>
+            {% elif error == 'password' %}
+            <div class="alert alert-warning py-2">密码至少 6 个字符。</div>
+            {% elif error == 'confirm' %}
+            <div class="alert alert-warning py-2">两次输入的密码不一致。</div>
+            {% elif error == 'exists' %}
+            <div class="alert alert-danger py-2">用户名已存在，请更换。</div>
+            {% endif %}
+            <form method="post" action="/register">
+                <div class="mb-3">
+                    <label class="form-label">用户名</label>
+                    <input type="text" name="username" class="form-control" required minlength="3" autocomplete="username" value="{{ username or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">姓名（可选）</label>
+                    <input type="text" name="full_name" class="form-control" value="{{ full_name or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">邮箱（可选）</label>
+                    <input type="email" name="email" class="form-control" autocomplete="email" value="{{ email or '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">密码</label>
+                    <input type="password" name="password" class="form-control" required minlength="6" autocomplete="new-password">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">确认密码</label>
+                    <input type="password" name="confirm_password" class="form-control" required minlength="6" autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-success w-100">注册</button>
+            </form>
+            <p class="text-muted small mt-3 mb-0">
+                <a href="/login">已有账号？去登录</a><br>
+                <a href="/">返回数据填报</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
