@@ -116,15 +116,16 @@ class PermissionChecker:
                 ORDER BY priority DESC, id DESC
                 LIMIT 1
             """
-            result = self.db_service.fetchone(
-                query,
-                (resource_type, resource_name, action, role),
-                thread_safe=True,
-            )
-
-            if not result:
-                return None
-            return bool(int(result.get("allowed", 0)))
+            for name in self._resource_name_candidates(resource_type, resource_name):
+                result = self.db_service.fetchone(
+                    query,
+                    (resource_type, name, action, role),
+                    thread_safe=True,
+                )
+                if not result:
+                    continue
+                return bool(int(result.get("allowed", 0)))
+            return None
         except Exception as e:
             self._log_error(f"数据库权限检查失败: {e}")
             return None
@@ -139,9 +140,13 @@ class PermissionChecker:
             return role in allowed_roles if allowed_roles else None
 
         elif resource_type == "form":
-            form_perms = file_perms.get("forms", {}).get(resource_name, {})
-            allowed_roles = form_perms.get(action, [])
-            return role in allowed_roles if allowed_roles else None
+            forms_cfg = file_perms.get("forms", {})
+            for name in self._resource_name_candidates(resource_type, resource_name):
+                form_perms = forms_cfg.get(name, {})
+                allowed_roles = form_perms.get(action, [])
+                if allowed_roles:
+                    return role in allowed_roles
+            return None
 
         return None
 
@@ -182,6 +187,32 @@ class PermissionChecker:
         if alias and alias != normalized:
             return [normalized, alias]
         return [normalized]
+
+    @staticmethod
+    def _resource_name_candidates(resource_type: str, resource_name: str) -> list[str]:
+        """Return normalized candidate names for permission lookup."""
+        name = str(resource_name or "").strip()
+        if not name:
+            return [""]
+        if resource_type != "form":
+            return [name]
+        prefix = "records_"
+        candidates: list[str] = [name]
+        if name.startswith(prefix):
+            short_name = name[len(prefix):].strip()
+            if short_name:
+                candidates.append(short_name)
+        else:
+            candidates.append(f"{prefix}{name}")
+        # Preserve order while deduplicating.
+        out: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            out.append(candidate)
+        return out
 
     def check(self, role: str, resource_type: str, resource_name: str, action: str,
               local_config: Optional[Dict] = None) -> bool:

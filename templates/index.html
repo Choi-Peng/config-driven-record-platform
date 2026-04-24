@@ -13,8 +13,14 @@
                     <form id="recordForm">
                         <div id="dynamicForm"></div>
                         <input type="hidden" id="form_page" data-field-key="form_page" value="{{ current_form_page }}">
-                        <button type="submit" class="btn btn-success w-100">
-                            <i class="bi bi-check-circle"></i> 提交记录
+                        <button
+                            type="submit"
+                            id="submitRecordBtn"
+                            class="btn {{ 'btn-success' if can_create_form else 'btn-secondary' }} w-100"
+                            {% if not can_create_form %}disabled{% endif %}
+                        >
+                            <i class="bi bi-check-circle"></i>
+                            {{ '提交记录' if can_create_form else '无提交权限（只读）' }}
                         </button>
                     </form>
                 </div>
@@ -344,14 +350,17 @@
         document.querySelectorAll('#dynamicForm input, #dynamicForm textarea, #dynamicForm select').forEach((el) => {
             el.disabled = !enabled;
         });
-        const submitBtn = document.querySelector('#recordForm button[type="submit"]');
+        document.querySelectorAll('#dynamicForm .btn-danger').forEach((el) => {
+            el.disabled = !enabled;
+        });
+        const submitBtn = document.getElementById('submitRecordBtn');
         if (submitBtn) {
             submitBtn.disabled = !enabled;
-            if (!enabled) {
-                submitBtn.classList.remove('btn-success');
-                submitBtn.classList.add('btn-secondary');
-                submitBtn.textContent = '无提交权限（只读）';
-            }
+            submitBtn.classList.toggle('btn-success', enabled);
+            submitBtn.classList.toggle('btn-secondary', !enabled);
+            submitBtn.innerHTML = enabled
+                ? '<i class="bi bi-check-circle"></i> 提交记录'
+                : '<i class="bi bi-lock"></i> 无提交权限（只读）';
         }
     }
 
