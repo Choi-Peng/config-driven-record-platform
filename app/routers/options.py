@@ -1,7 +1,8 @@
 """
-选项API路由
+选项接口路由。
 
-提供动态选项加载
+Version: 1.0.0
+提供表单字段选项与数据源选项的查询接口。
 """
 from __future__ import annotations
 

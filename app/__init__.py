@@ -1,3 +1,7 @@
-"""App package for Fertilizer Field Recorder."""
+"""
+记录系统应用包。
 
+Version: 1.0.0
+封装 FastAPI 应用的入口、路由、配置与核心业务模块。
+"""
 __version__ = "1.0.0"

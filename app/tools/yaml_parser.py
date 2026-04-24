@@ -1,6 +1,9 @@
-#!/usr/bin/env python3
-"""Parse form YAML files with ruamel.yaml and !include support."""
+"""
+YAML 解析工具。
 
+Version: 1.0.0
+负责解析表单 YAML，并支持 `!include` 引用展开。
+"""
 from __future__ import annotations
 
 import argparse

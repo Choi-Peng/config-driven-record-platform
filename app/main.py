@@ -1,8 +1,9 @@
 """
-肥料实验田每日数据记录系统
-FastAPI + SQLite 后端
-"""
+应用启动入口。
 
+Version: 1.0.0
+负责创建 FastAPI 应用并装配配置、中间件、静态资源与业务路由。
+"""
 import os
 
 from fastapi import FastAPI

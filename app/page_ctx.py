@@ -1,3 +1,9 @@
+"""
+页面模板上下文构建。
+
+Version: 1.0.0
+统一注入当前用户、站点信息与导航数据，并按权限过滤可见模块。
+"""
 from fastapi import Request
 from app.core.config import get_config_service
 from app.tools.permission_checker import check_permission

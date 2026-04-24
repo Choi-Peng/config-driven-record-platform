@@ -1,7 +1,8 @@
 """
-异常定义
+核心异常定义。
 
-定义项目中的自定义异常
+Version: 1.0.0
+定义应用级、数据库级、权限级与 HTTP 语义化异常类型。
 """
 from __future__ import annotations
 

@@ -1,3 +1,9 @@
+"""
+记录导出路由。
+
+Version: 1.0.0
+支持按表单页、日期区间或勾选记录导出 CSV，并在多表单场景下打包 ZIP。
+"""
 import csv
 import io
 import re

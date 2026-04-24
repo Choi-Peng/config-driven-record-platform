@@ -67,4 +67,5 @@ data/files/
 
 # Custom Configurations
 config/
+!app/config/
 *.yaml

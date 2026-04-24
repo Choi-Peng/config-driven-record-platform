@@ -1,7 +1,8 @@
 """
-数据库服务
+核心数据库服务。
 
-提供数据库连接管理和操作
+Version: 1.0.0
+提供 SQLite 连接池、事务上下文与通用数据访问封装。
 """
 from __future__ import annotations
 

@@ -1,6 +1,8 @@
 """
-Version: 1.0
 表单布局加载。
+
+Version: 1.0.0
+负责标准化表单页面布局配置并输出可用于渲染与建表的字段定义。
 """
 from __future__ import annotations
 from app.core.config import get_config_service

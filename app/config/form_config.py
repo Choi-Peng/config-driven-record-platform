@@ -1,7 +1,8 @@
 """
-表单配置加载器
+表单配置加载器。
 
-加载和管理表单配置文件 (config/forms/*.yaml)
+Version: 1.0.0
+负责加载表单 YAML 配置，并输出标准化的页面布局与字段配置数据。
 """
 from __future__ import annotations
 

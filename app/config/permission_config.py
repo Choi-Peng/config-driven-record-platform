@@ -1,7 +1,8 @@
 """
-权限配置加载器
+权限配置加载器。
 
-加载和管理权限配置文件 (config/permissions.yaml)
+Version: 1.0.0
+负责加载权限策略配置并标准化权限顺序、默认规则、缓存与日志参数。
 """
 from __future__ import annotations
 

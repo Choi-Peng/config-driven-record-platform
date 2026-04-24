@@ -1,3 +1,9 @@
+"""
+认证与会话路由。
+
+Version: 1.0.0
+提供登录、注册、管理员引导初始化、退出登录与当前用户信息接口。
+"""
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Request

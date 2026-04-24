@@ -1,3 +1,9 @@
+"""
+页面渲染路由。
+
+Version: 1.0.0
+负责表单页、记录页、管理页等模板渲染，并在入口层做访问权限守卫。
+"""
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.config import get_config_service

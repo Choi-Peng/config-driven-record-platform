@@ -1,3 +1,9 @@
+"""
+记录数据路由。
+
+Version: 1.0.0
+提供记录查询、列配置、创建、详情、更新、删除，以及图片字段上传与维护。
+"""
 import json
 import re
 from pathlib import Path

@@ -1,3 +1,9 @@
+"""
+通用实体管理路由。
+
+Version: 1.0.0
+基于表配置提供元数据、列表、创建、更新、删除等后台管理接口。
+"""
 from __future__ import annotations
 
 import re
@@ -339,4 +345,3 @@ async def delete_entity(table_key: str, entity_id: int, request: Request):
         return {"success": True}
     finally:
         conn.close()
-

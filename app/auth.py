@@ -1,5 +1,9 @@
-"""用户认证与会话管理。"""
+"""
+用户认证与权限校验。
 
+Version: 1.0.0
+负责密码处理、用户验证、会话用户读取与资源权限检查。
+"""
 import secrets
 import bcrypt
 from typing import Dict, Optional

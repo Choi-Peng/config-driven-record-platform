@@ -1,7 +1,8 @@
 """
-表格配置加载器
+表格配置加载器。
 
-加载和管理表格配置文件 (config/tables/*.yaml)
+Version: 1.0.0
+负责加载表配置并生成建表 SQL、种子数据与展示字段元信息。
 """
 from __future__ import annotations
 

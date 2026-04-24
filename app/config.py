@@ -1,5 +1,9 @@
-"""应用配置（环境变量）。"""
+"""
+应用环境配置。
 
+Version: 1.0.0
+负责加载 `.env` 并提供统一的运行时敏感配置读取入口。
+"""
 import os
 from functools import lru_cache
 from pathlib import Path

@@ -1,7 +1,8 @@
 """
-主配置加载器
+主配置加载器。
 
-加载和管理主配置文件 (config/main.yaml)
+Version: 1.0.0
+负责解析主配置文件并标准化数据路径、表单页、表配置与系统基础参数。
 """
 from __future__ import annotations
 

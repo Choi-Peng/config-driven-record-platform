@@ -1,6 +1,8 @@
 """
-Version: 1.0
 数据库操作。
+
+Version: 1.0.0
+负责 SQLite 连接、基础建表、种子数据写入与动态记录表结构生成。
 """
 from __future__ import annotations
 
