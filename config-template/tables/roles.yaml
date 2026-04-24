@@ -17,24 +17,33 @@ db_info:
     id: INTEGER PRIMARY KEY AUTOINCREMENT
     name: TEXT NOT NULL
     description: TEXT
+    permission_inherit_id: INTEGER DEFAULT 2 # NULL=无继承, 2=继承viewer
     created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     modified_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     deleted: INTEGER DEFAULT 0
     deleted_at: TIMESTAMP
     deleted_by: TEXT
+  foreign_keys:
+    permission_inherit_id: roles.id
 
 seed_data:
   - name: <角色名1>
     description: <角色描述1>
+    permission_inherit_id: NULL
   - name: <角色名2>
     description: <角色描述2>
+    permission_inherit_id: NULL
 
-show_columns: [id, name, description, modified_at]
+column_mapping:
+  permission_inherit_name: permission_inherit_id#roles.description
 
-editable_columns: [name, description]
+show_columns: [id, name, description, permission_inherit_name, modified_at]
+
+editable_columns: [name, description, permission_inherit_name]
 
 column_labels:
   id: 编号
   name: 角色名
   description: 描述
+  permission_inherit_name: 权限继承
   modified_at: 更新时间

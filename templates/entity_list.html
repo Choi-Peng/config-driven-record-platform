@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ table_title or table_key }} 管理 — {{ site_title }}{% endblock %}
+{% block title %}{{ table_title or table_key }}管理 — {{ site_title }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
@@ -29,7 +29,6 @@
 const TABLE_KEY = "{{ table_key }}";
 let TABLE_TITLE = "{{ table_title or table_key }}";
 let SHOW_COLUMNS = [];
-let EDITABLE_COLUMNS = [];
 let COLUMN_LABELS = {};
 
 function esc(v) {
@@ -42,11 +41,10 @@ async function loadMeta() {
     if (!res.ok) throw new Error(data.detail || "加载元数据失败");
     TABLE_TITLE = String(data.title || TABLE_TITLE || TABLE_KEY);
     SHOW_COLUMNS = Array.isArray(data.show_columns) ? data.show_columns : [];
-    EDITABLE_COLUMNS = Array.isArray(data.editable_columns) ? data.editable_columns : [];
     COLUMN_LABELS = (data.column_labels && typeof data.column_labels === 'object') ? data.column_labels : {};
-    document.title = `${TABLE_TITLE} 管理 — {{ site_title }}`;
+    document.title = `${TABLE_TITLE}管理 — {{ site_title }}`;
     const heading = document.querySelector("h5.mb-0");
-    if (heading) heading.innerHTML = `<i class="bi bi-table"></i> ${esc(TABLE_TITLE)} 管理`;
+    if (heading) heading.innerHTML = `<i class="bi bi-table"></i> ${esc(TABLE_TITLE)}管理`;
 }
 
 function displayColumnLabel(col) {
@@ -58,50 +56,6 @@ function renderHeader() {
     const head = document.getElementById("tblHead");
     const cols = [...SHOW_COLUMNS, "actions"];
     head.innerHTML = `<tr>${cols.map((c) => `<th>${esc(displayColumnLabel(c))}</th>`).join("")}</tr>`;
-}
-
-function buildEditablePayload(item) {
-    const out = {};
-    for (const k of EDITABLE_COLUMNS) {
-        out[k] = item[k] ?? "";
-    }
-    return out;
-}
-
-async function editItem(item) {
-    const seed = JSON.stringify(buildEditablePayload(item), null, 2);
-    const text = prompt("编辑 JSON（仅可编辑字段）", seed);
-    if (!text) return;
-    let payload = {};
-    try {
-        payload = JSON.parse(text);
-    } catch (e) {
-        alert("JSON 格式错误");
-        return;
-    }
-    const id = Number(item.id || 0);
-    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-        alert(data.detail || "更新失败");
-        return;
-    }
-    await loadItems();
-}
-
-async function deleteItem(id) {
-    if (!confirm("确认删除该记录吗？")) return;
-    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${id}`, { method: "DELETE" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.success) {
-        alert(data.detail || "删除失败");
-        return;
-    }
-    await loadItems();
 }
 
 async function loadItems() {
@@ -120,20 +74,11 @@ async function loadItems() {
     }
     body.innerHTML = items.map((item) => {
         const tds = SHOW_COLUMNS.map((col) => `<td>${esc(item[col] ?? "")}</td>`).join("");
+        const id = Number(item.id || 0);
         return `<tr>${tds}<td>
-            <button class="btn btn-outline-primary btn-sm me-1" data-action="edit" data-id="${Number(item.id || 0)}">编辑</button>
-            <button class="btn btn-outline-danger btn-sm" data-action="delete" data-id="${Number(item.id || 0)}">删除</button>
+            <a class="btn btn-outline-primary btn-sm" href="/manage/${encodeURIComponent(TABLE_KEY)}/${id}">查看</a>
         </td></tr>`;
     }).join("");
-    body.querySelectorAll("button[data-action='edit']").forEach((btn) => {
-        const id = Number(btn.dataset.id || 0);
-        const item = items.find((x) => Number(x.id || 0) === id);
-        btn.onclick = () => editItem(item || {});
-    });
-    body.querySelectorAll("button[data-action='delete']").forEach((btn) => {
-        const id = Number(btn.dataset.id || 0);
-        btn.onclick = () => deleteItem(id);
-    });
 }
 
 async function boot() {

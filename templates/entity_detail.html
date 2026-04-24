@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}查看 {{ table_title or table_key }} — {{ site_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-eye"></i> 查看 {{ table_title or table_key }}
+                </div>
+                <div class="card-body">
+                    <form id="detailForm">
+                        <div class="row" id="fieldsWrap"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            {% if can_update %}
+                            <button type="button" id="updateBtn" class="btn btn-primary">更新</button>
+                            {% endif %}
+                            {% if can_delete %}
+                            <button type="button" id="deleteBtn" class="btn btn-outline-danger">删除</button>
+                            {% endif %}
+                            <a class="btn btn-outline-secondary ms-auto" href="/manage/{{ table_key }}">返回列表</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TABLE_KEY = "{{ table_key }}";
+const ENTITY_ID = Number("{{ entity_id }}");
+const CAN_UPDATE = {{ "true" if can_update else "false" }};
+const CAN_DELETE = {{ "true" if can_delete else "false" }};
+let TABLE_TITLE = "{{ table_title or table_key }}";
+let EDITABLE_COLUMNS = [];
+let EDITABLE_SUGGESTIONS = {};
+let COLUMN_LABELS = {};
+let currentItem = {};
+let editMode = false;
+
+function esc(v) {
+    return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+}
+
+function renderFields(item = {}) {
+    const wrap = document.getElementById("fieldsWrap");
+    wrap.innerHTML = EDITABLE_COLUMNS.map((col, idx) => {
+        const datalistId = `suggestions_${idx}`;
+        const suggestions = Array.isArray(EDITABLE_SUGGESTIONS[col]) ? EDITABLE_SUGGESTIONS[col] : [];
+        const datalist = suggestions.length
+            ? `<datalist id="${datalistId}">${suggestions.map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>`
+            : "";
+        const listAttr = suggestions.length ? ` list="${datalistId}"` : "";
+        const value = item[col] == null ? "" : String(item[col]);
+        return `
+            <div class="col-md-6 mb-3">
+                <label class="form-label">${esc(COLUMN_LABELS[col] || col)}</label>
+                <input class="form-control" name="${esc(col)}" value="${esc(value)}"${listAttr} />
+                ${datalist}
+            </div>
+        `;
+    }).join("");
+}
+
+function setEditable(enabled) {
+    editMode = enabled;
+    document.querySelectorAll('#fieldsWrap input').forEach((el) => {
+        el.disabled = !enabled;
+    });
+    const btn = document.getElementById("updateBtn");
+    if (btn) {
+        btn.textContent = enabled ? "保存" : "更新";
+        btn.className = enabled ? "btn btn-success" : "btn btn-primary";
+    }
+}
+
+function collectPayload() {
+    const payload = {};
+    for (const col of EDITABLE_COLUMNS) {
+        const input = document.querySelector(`#fieldsWrap input[name="${col}"]`);
+        if (!input) continue;
+        payload[col] = String(input.value ?? "").trim();
+    }
+    return payload;
+}
+
+async function loadMetaAndItem() {
+    const [metaRes, itemRes] = await Promise.all([
+        fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/meta`),
+        fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${ENTITY_ID}`),
+    ]);
+    const meta = await metaRes.json().catch(() => ({}));
+    const itemData = await itemRes.json().catch(() => ({}));
+    if (!metaRes.ok) throw new Error(meta.detail || "加载字段失败");
+    if (!itemRes.ok) throw new Error(itemData.detail || "加载记录失败");
+    TABLE_TITLE = String(meta.title || TABLE_TITLE || TABLE_KEY);
+    EDITABLE_COLUMNS = Array.isArray(meta.editable_columns) ? meta.editable_columns : [];
+    EDITABLE_SUGGESTIONS = (meta.editable_suggestions && typeof meta.editable_suggestions === "object")
+        ? meta.editable_suggestions
+        : {};
+    COLUMN_LABELS = (meta.column_labels && typeof meta.column_labels === "object") ? meta.column_labels : {};
+    currentItem = (itemData && typeof itemData.item === "object" && itemData.item) ? itemData.item : {};
+    document.title = `查看 ${TABLE_TITLE} — {{ site_title }}`;
+    const header = document.querySelector(".card-header");
+    if (header) header.innerHTML = `<i class="bi bi-eye"></i> 查看 ${esc(TABLE_TITLE)}`;
+    renderFields(currentItem);
+    setEditable(false);
+}
+
+async function saveItem() {
+    const payload = collectPayload();
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${ENTITY_ID}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || "更新失败");
+        return false;
+    }
+    return true;
+}
+
+async function deleteItem() {
+    if (!confirm("确认删除该记录吗？")) return;
+    const res = await fetch(`/api/entities/${encodeURIComponent(TABLE_KEY)}/${ENTITY_ID}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+        alert(data.detail || "删除失败");
+        return;
+    }
+    window.location.href = `/manage/${encodeURIComponent(TABLE_KEY)}`;
+}
+
+async function boot() {
+    await loadMetaAndItem();
+    const updateBtn = document.getElementById("updateBtn");
+    if (updateBtn && CAN_UPDATE) {
+        updateBtn.addEventListener("click", async () => {
+            if (!editMode) {
+                setEditable(true);
+                return;
+            }
+            const ok = await saveItem();
+            if (!ok) return;
+            alert("更新成功");
+            window.location.reload();
+        });
+    }
+    const deleteBtn = document.getElementById("deleteBtn");
+    if (deleteBtn && CAN_DELETE) {
+        deleteBtn.addEventListener("click", deleteItem);
+    }
+}
+
+boot().catch((e) => {
+    alert(e.message || e);
+});
+</script>
+{% endblock %}

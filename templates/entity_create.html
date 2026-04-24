@@ -29,6 +29,7 @@
 const TABLE_KEY = "{{ table_key }}";
 let TABLE_TITLE = "{{ table_title or table_key }}";
 let EDITABLE_COLUMNS = [];
+let EDITABLE_SUGGESTIONS = {};
 let COLUMN_LABELS = {};
 
 function esc(v) {
@@ -37,12 +38,21 @@ function esc(v) {
 
 function renderFields() {
     const wrap = document.getElementById("fieldsWrap");
-    wrap.innerHTML = EDITABLE_COLUMNS.map((col) => `
-        <div class="col-md-6 mb-3">
-            <label class="form-label">${esc(COLUMN_LABELS[col] || col)}</label>
-            <input class="form-control" name="${esc(col)}" />
-        </div>
-    `).join("");
+    wrap.innerHTML = EDITABLE_COLUMNS.map((col, idx) => {
+        const datalistId = `suggestions_${idx}`;
+        const suggestions = Array.isArray(EDITABLE_SUGGESTIONS[col]) ? EDITABLE_SUGGESTIONS[col] : [];
+        const datalist = suggestions.length
+            ? `<datalist id="${datalistId}">${suggestions.map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>`
+            : "";
+        const listAttr = suggestions.length ? ` list="${datalistId}"` : "";
+        return `
+            <div class="col-md-6 mb-3">
+                <label class="form-label">${esc(COLUMN_LABELS[col] || col)}</label>
+                <input class="form-control" name="${esc(col)}"${listAttr} />
+                ${datalist}
+            </div>
+        `;
+    }).join("");
 }
 
 async function boot() {
@@ -53,6 +63,9 @@ async function boot() {
     }
     TABLE_TITLE = String(data.title || TABLE_TITLE || TABLE_KEY);
     EDITABLE_COLUMNS = Array.isArray(data.editable_columns) ? data.editable_columns : [];
+    EDITABLE_SUGGESTIONS = (data.editable_suggestions && typeof data.editable_suggestions === "object")
+        ? data.editable_suggestions
+        : {};
     COLUMN_LABELS = (data.column_labels && typeof data.column_labels === "object") ? data.column_labels : {};
     document.title = `新建 ${TABLE_TITLE} — {{ site_title }}`;
     const cardHeader = document.querySelector(".card-header");

@@ -1,7 +1,7 @@
 """
 通用实体管理路由。
 
-Version: 1.0.0
+Version: 1.0.1
 基于表配置提供元数据、列表、创建、更新、删除等后台管理接口。
 """
 from __future__ import annotations
@@ -96,7 +96,7 @@ def _map_payload_to_db_columns(
 
 
 def _build_select_columns(
-    table_name: str,
+    table_alias: str,
     show_columns: list[str],
     actual_columns: list[str],
     mapping_config: dict[str, dict[str, str]],
@@ -105,7 +105,7 @@ def _build_select_columns(
     select_parts: list[str] = []
     for col in show_columns:
         if col in actual_set:
-            select_parts.append(col)
+            select_parts.append(f"{table_alias}.{col} AS {col}")
             continue
         mapping = mapping_config.get(col)
         if not mapping:
@@ -116,18 +116,33 @@ def _build_select_columns(
         ref_id_col = mapping["ref_id_col"]
         expr = (
             f"(SELECT {ref_value_col} FROM {ref_table} "
-            f"WHERE {ref_table}.{ref_id_col} = {table_name}.{source_col} LIMIT 1) AS {col}"
+            f"WHERE {ref_table}.{ref_id_col} = {table_alias}.{source_col} LIMIT 1) AS {col}"
         )
         select_parts.append(expr)
     return ", ".join(select_parts)
 
 
-def _inherit_viewer_permissions_for_role(conn, role_name: str) -> None:
-    """Clone viewer permissions for a newly created role."""
+def _inherit_permissions_for_role(conn, role_name: str, inherit_role_id: Any) -> None:
+    """Clone inherited role permissions for a newly created role."""
     new_role = str(role_name).strip()
-    if not new_role or new_role == "viewer":
+    if not new_role:
+        return
+    if inherit_role_id is None or (isinstance(inherit_role_id, str) and not inherit_role_id.strip()):
         return
     if not db_service.table_exists("permissions", thread_safe=False):
+        return
+
+    role_cols = {c.get("name") for c in db_service.get_table_info("roles", thread_safe=False)}
+    if "name" not in role_cols:
+        return
+    role_where_deleted = " AND deleted = 0" if "deleted" in role_cols else ""
+    inherited_role = db_service.fetchone(
+        f"SELECT name FROM roles WHERE id = ?{role_where_deleted} LIMIT 1",
+        (inherit_role_id,),
+        thread_safe=False,
+    )
+    inherited_role_name = str((inherited_role or {}).get("name", "")).strip()
+    if not inherited_role_name or inherited_role_name == new_role:
         return
 
     permission_cols = {c.get("name") for c in db_service.get_table_info("permissions", thread_safe=False)}
@@ -140,7 +155,7 @@ def _inherit_viewer_permissions_for_role(conn, role_name: str) -> None:
     where_deleted = " AND deleted = 0" if "deleted" in permission_cols else ""
     source_rows = db_service.fetchall(
         f"SELECT {', '.join(source_select)} FROM permissions WHERE role_name = ?{where_deleted}",
-        ("viewer",),
+        (inherited_role_name,),
         thread_safe=False,
     )
     if not source_rows:
@@ -184,15 +199,31 @@ def _table_columns(table_name: str) -> list[str]:
 
 
 def _editable_columns(meta: dict[str, Any], actual_columns: list[str]) -> list[str]:
+    mapping_config = _parse_column_mapping(meta)
     configured = meta.get("editable_columns")
     if isinstance(configured, list) and configured:
         cols = [str(c).strip() for c in configured if str(c).strip()]
-        return [c for c in cols if c in actual_columns and c not in SYSTEM_FIELDS]
+        out: list[str] = []
+        for col in cols:
+            if col in actual_columns and col not in SYSTEM_FIELDS:
+                out.append(col)
+                continue
+            # Allow mapped alias fields defined in editable_columns.
+            if col in mapping_config:
+                out.append(col)
+        return out
 
     show_cols = meta.get("show_columns")
     if isinstance(show_cols, list) and show_cols:
         cols = [str(c).strip() for c in show_cols if str(c).strip()]
-        out = [c for c in cols if c in actual_columns and c not in SYSTEM_FIELDS]
+        out: list[str] = []
+        for col in cols:
+            if col in actual_columns and col not in SYSTEM_FIELDS:
+                out.append(col)
+                continue
+            # Fallback to mapped alias when editable_columns is not configured.
+            if col in mapping_config:
+                out.append(col)
         if out:
             return out
 
@@ -212,18 +243,85 @@ def _column_labels(meta: dict[str, Any]) -> dict[str, str]:
     return labels
 
 
+def _distinct_text_values(
+    table_name: str,
+    value_col: str,
+    *,
+    with_deleted_filter: bool,
+    limit: int = 200,
+) -> list[str]:
+    table_ident = _safe_ident(table_name)
+    value_ident = _safe_ident(value_col)
+    where_parts = [
+        f"{value_ident} IS NOT NULL",
+        f"TRIM(CAST({value_ident} AS TEXT)) <> ''",
+    ]
+    if with_deleted_filter:
+        where_parts.append("deleted = 0")
+    where_sql = " AND ".join(where_parts)
+    rows = db_service.fetchall(
+        f"SELECT DISTINCT {value_ident} AS value FROM {table_ident} "
+        f"WHERE {where_sql} ORDER BY {value_ident} LIMIT {int(limit)}"
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        raw = row.get("value")
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+def _editable_suggestions(
+    meta: dict[str, Any],
+    table_name: str,
+    actual_columns: list[str],
+    editable_columns: list[str],
+) -> dict[str, list[str]]:
+    mapping_config = _parse_column_mapping(meta)
+    actual_set = set(actual_columns)
+    suggestions: dict[str, list[str]] = {}
+    for col in editable_columns:
+        values: list[str] = []
+        mapping = mapping_config.get(col)
+        if mapping:
+            ref_table = mapping["ref_table"]
+            ref_value_col = mapping["ref_value_col"]
+            ref_cols = _table_columns(ref_table)
+            values = _distinct_text_values(
+                ref_table,
+                ref_value_col,
+                with_deleted_filter="deleted" in ref_cols,
+            )
+        elif col in actual_set and col not in SYSTEM_FIELDS:
+            values = _distinct_text_values(
+                table_name,
+                col,
+                with_deleted_filter="deleted" in actual_set,
+            )
+        suggestions[col] = values
+    return suggestions
+
+
 @router.get("/{table_key}/meta")
 async def get_entity_meta(table_key: str, request: Request):
     await require_permission(request, "table", table_key, "read")
     meta = _table_meta(table_key)
     table_name = str(meta["table_name"])
     cols = _table_columns(table_name)
+    editable_cols = _editable_columns(meta, cols)
     return {
         "table_key": table_key,
         "table_name": table_name,
         "title": meta.get("title", table_key),
         "show_columns": meta.get("show_columns", []),
-        "editable_columns": _editable_columns(meta, cols),
+        "editable_columns": editable_cols,
+        "editable_suggestions": _editable_suggestions(meta, table_name, cols, editable_cols),
         "column_labels": _column_labels(meta),
         "columns": cols,
     }
@@ -241,11 +339,40 @@ async def list_entities(table_key: str, request: Request):
         show_columns = [c for c in cols if c != "deleted"]
     if "id" in cols and "id" not in show_columns:
         show_columns = ["id"] + show_columns
-    select_cols = _build_select_columns(table_name, show_columns, cols, mapping_config)
+    base_alias = "t0"
+    select_cols = _build_select_columns(base_alias, show_columns, cols, mapping_config)
     where_sql = " WHERE deleted = 0" if "deleted" in cols else ""
     order_sql = " ORDER BY id DESC" if "id" in cols else ""
-    rows = db_service.fetchall(f"SELECT {select_cols} FROM {table_name}{where_sql}{order_sql}")
+    rows = db_service.fetchall(
+        f"SELECT {select_cols} FROM {table_name} AS {base_alias}{where_sql}{order_sql}"
+    )
     return {"items": rows}
+
+
+@router.get("/{table_key}/{entity_id}")
+async def get_entity(table_key: str, entity_id: int, request: Request):
+    await require_permission(request, "table", table_key, "read")
+    meta = _table_meta(table_key)
+    table_name = str(meta["table_name"])
+    cols = _table_columns(table_name)
+    show_columns = [str(c).strip() for c in meta.get("show_columns", []) if str(c).strip()]
+    mapping_config = _parse_column_mapping(meta)
+    if not show_columns:
+        show_columns = [c for c in cols if c != "deleted"]
+    if "id" in cols and "id" not in show_columns:
+        show_columns = ["id"] + show_columns
+    base_alias = "t0"
+    select_cols = _build_select_columns(base_alias, show_columns, cols, mapping_config)
+    where_sql = f" WHERE {base_alias}.id = ?"
+    if "deleted" in cols:
+        where_sql += f" AND {base_alias}.deleted = 0"
+    row = db_service.fetchone(
+        f"SELECT {select_cols} FROM {table_name} AS {base_alias}{where_sql} LIMIT 1",
+        (entity_id,),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    return {"item": row}
 
 
 @router.post("/{table_key}")
@@ -277,7 +404,11 @@ async def create_entity(table_key: str, payload: dict[str, Any], request: Reques
         cur = conn.connection.cursor()
         cur.execute(sql, [write_data[k] for k in keys])
         if table_key == "roles" and isinstance(write_data.get("name"), str):
-            _inherit_viewer_permissions_for_role(conn, str(write_data["name"]))
+            _inherit_permissions_for_role(
+                conn,
+                str(write_data["name"]),
+                write_data.get("permission_inherit_id"),
+            )
         conn.commit()
         return {"success": True, "id": cur.lastrowid}
     finally:

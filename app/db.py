@@ -1,7 +1,7 @@
 """
 数据库操作。
 
-Version: 1.0.0
+Version: 1.0.1
 负责 SQLite 连接、基础建表、种子数据写入与动态记录表结构生成。
 """
 from __future__ import annotations
@@ -125,6 +125,94 @@ def _normalize_seed_insert_row(table_name: str, row: dict[str, Any]) -> dict[str
     return normalized
 
 
+def _apply_role_permission_inheritance(cursor: sqlite3.Cursor) -> None:
+    """Backfill inherited permissions for roles during initialization."""
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='roles'")
+    if not cursor.fetchone():
+        return
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='permissions'")
+    if not cursor.fetchone():
+        return
+
+    cursor.execute("PRAGMA table_info(roles)")
+    role_cols = {str(row[1]) for row in cursor.fetchall()}
+    required_role_cols = {"id", "name", "permission_inherit_id"}
+    if not required_role_cols.issubset(role_cols):
+        return
+
+    cursor.execute("PRAGMA table_info(permissions)")
+    permission_cols = {str(row[1]) for row in cursor.fetchall()}
+    required_permission_cols = {"resource_type", "resource_name", "action", "role_name"}
+    if not required_permission_cols.issubset(permission_cols):
+        return
+
+    role_where_deleted = " AND deleted = 0" if "deleted" in role_cols else ""
+    cursor.execute(f"SELECT id, name FROM roles WHERE 1=1{role_where_deleted}")
+    all_role_rows = [dict(row) for row in cursor.fetchall()]
+    role_name_by_id = {str(row.get("id")): str(row.get("name", "")).strip() for row in all_role_rows}
+
+    cursor.execute(
+        "SELECT id, name, permission_inherit_id FROM roles "
+        "WHERE permission_inherit_id IS NOT NULL"
+        f"{role_where_deleted}"
+    )
+    role_rows = [dict(row) for row in cursor.fetchall()]
+    if not role_rows:
+        return
+
+    source_select = ["resource_type", "resource_name", "action", "allowed", "priority"]
+    source_select = [col for col in source_select if col in permission_cols]
+    insert_cols = ["resource_type", "resource_name", "action", "role_name"]
+    for optional_col in ("allowed", "priority", "deleted"):
+        if optional_col in permission_cols:
+            insert_cols.append(optional_col)
+    placeholders = ", ".join(["?"] * len(insert_cols))
+    insert_sql = f"INSERT INTO permissions ({', '.join(insert_cols)}) VALUES ({placeholders})"
+    permission_where_deleted = " AND deleted = 0" if "deleted" in permission_cols else ""
+
+    for role in role_rows:
+        child_name = str(role.get("name", "")).strip()
+        parent_id = role.get("permission_inherit_id")
+        parent_name = role_name_by_id.get(str(parent_id), "").strip()
+        if not child_name or not parent_name or child_name == parent_name:
+            continue
+
+        cursor.execute(
+            f"SELECT {', '.join(source_select)} FROM permissions "
+            "WHERE role_name = ?"
+            f"{permission_where_deleted}",
+            (parent_name,),
+        )
+        source_rows = [dict(row) for row in cursor.fetchall()]
+        if not source_rows:
+            continue
+
+        for source_row in source_rows:
+            cursor.execute(
+                "SELECT 1 FROM permissions WHERE resource_type = ? AND resource_name = ? "
+                "AND action = ? AND role_name = ?"
+                f"{permission_where_deleted} LIMIT 1",
+                (
+                    source_row.get("resource_type"),
+                    source_row.get("resource_name"),
+                    source_row.get("action"),
+                    child_name,
+                ),
+            )
+            if cursor.fetchone():
+                continue
+
+            values: list[Any] = []
+            for col in insert_cols:
+                if col == "role_name":
+                    values.append(child_name)
+                elif col == "deleted":
+                    values.append(0)
+                else:
+                    values.append(source_row.get(col))
+            cursor.execute(insert_sql, values)
+
+
 def init_db() -> None:
     conn = get_db()
     cursor = conn.cursor()
@@ -149,6 +237,8 @@ def init_db() -> None:
                 sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
                 values = [_to_sql_value(row.get(col)) for col in columns]
                 cursor.execute(sql, values)
+
+    _apply_role_permission_inheritance(cursor)
 
     conn.commit()
     conn.close()

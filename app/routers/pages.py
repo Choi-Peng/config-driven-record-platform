@@ -1,7 +1,7 @@
 """
 页面渲染路由。
 
-Version: 1.0.0
+Version: 1.0.1
 负责表单页、记录页、管理页等模板渲染，并在入口层做访问权限守卫。
 """
 from fastapi import APIRouter, Request
@@ -175,5 +175,32 @@ async def manage_table_create_page(request: Request, table_key: str):
             current_form_page=None,
             table_key=table_key,
             table_title=_main().tables[table_key].title,
+        ),
+    )
+
+
+@router.get("/manage/{table_key}/{entity_id}", response_class=HTMLResponse)
+async def manage_table_detail_page(request: Request, table_key: str, entity_id: int):
+    if not _table_exists(table_key):
+        return RedirectResponse(url="/records", status_code=302)
+    if (r := _guard_page(request, f"/manage/{table_key}/{entity_id}", "table", table_key, "read")) is not None:
+        return r
+    viewer = request.session.get("viewer") or {}
+    role = viewer.get("role_name", "viewer")
+    can_update = check_permission(role, "table", table_key, "update")
+    can_delete = check_permission(role, "table", table_key, "delete")
+    return templates.TemplateResponse(
+        "entity_detail.html",
+        template_context(
+            request,
+            tables=_main().tables,
+            active_page=f"manage_{table_key}",
+            form_pages=_main().form_pages,
+            current_form_page=None,
+            table_key=table_key,
+            table_title=_main().tables[table_key].title,
+            entity_id=entity_id,
+            can_update=can_update,
+            can_delete=can_delete,
         ),
     )
